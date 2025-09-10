@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Silavara | Trading Messages</title>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+  <style>
+    :root {
+      --accent: #10b981;
+      --accent-light: #34d399;
+      --bg-dark: #111827;
+      --bg-light: #1f2937;
+      --text-main: #f9fafb;
+      --text-muted: #9ca3af;
+      --shadow: rgba(0, 0, 0, 0.5);
+    }
+
+    body {
+      font-family: 'Roboto Mono', monospace;
+      background: linear-gradient(to bottom, var(--bg-dark), #1e293b);
+    }
+
+    .message {
+      transition: transform 0.2s ease, background-color 0.2s ease;
+    }
+
+    .message:hover {
+      transform: translateY(-2px);
+      background-color: var(--bg-light);
+    }
+
+    .date-header {
+      transition: color 0.2s ease;
+    }
+
+    .date-header:hover {
+      color: var(--accent-light);
+    }
+
+    /* Custom scrollbar for trading aesthetic */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: var(--bg-dark);
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--accent);
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--accent-light);
+    }
+  </style>
+</head>
+<body class="min-h-screen text-gray-100">
+  <!-- Navbar -->
+  <nav class="bg-gray-800/90 backdrop-blur-sm py-4 px-6 sticky top-0 z-10 shadow-lg">
+    <div class="max-w-5xl mx-auto flex justify-between items-center">
+      <h1 class="text-2xl font-bold text-emerald-400">Silavara Trading Messages</h1>
+      <div class="text-sm text-gray-400">Real-Time Market Insights</div>
+    </div>
+  </nav>
+
+  <!-- Date Picker and Back Button -->
+  <div id="date-picker-container" class="max-w-5xl mx-auto mt-6 px-4">
+    <input
+      type="date"
+      id="date-picker"
+      class="w-full sm:w-64 bg-gray-700 text-gray-100 rounded-lg py-2 px-4 border border-gray-600 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/50 outline-none transition-all"
+    />
+  </div>
+
+  <div id="back-btn-container" class="max-w-5xl mx-auto mt-6 px-4 hidden">
+    <button
+      id="back-btn"
+      class="bg-emerald-500 text-gray-900 font-medium py-2 px-6 rounded-lg hover:bg-emerald-400 transition-colors"
+    >
+      ← Back to Calendar
+    </button>
+  </div>
+
+  <!-- Messages -->
+  <div id="messages" class="max-w-5xl mx-auto mt-6 px-4 hidden"></div>
+
+  <script>
+    const socket = io();
+    const messagesDiv = document.getElementById('messages');
+    const datePickerContainer = document.getElementById('date-picker-container');
+    const datePicker = document.getElementById('date-picker');
+    const backBtnContainer = document.getElementById('back-btn-container');
+    const backBtn = document.getElementById('back-btn');
+
+    let groupedMessages = {};
+    let filteredDate = null;
+
+    // Debounce function to limit render calls
+    function debounce(func, wait) {
+      let timeout;
+      return function executedFunction(...args) {
+        const later = () => {
+          clearTimeout(timeout);
+          func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+      };
+    }
+
+    function renderMessages() {
+      messagesDiv.innerHTML = '';
+
+      if (!filteredDate || !groupedMessages[filteredDate]) {
+        messagesDiv.innerHTML = `<p class="text-center text-gray-400">No messages for selected date.</p>`;
+        return;
+      }
+
+      const group = groupedMessages[filteredDate];
+
+      const container = document.createElement('div');
+      container.className = 'date-group mb-8';
+
+      const header = document.createElement('div');
+      header.className = 'date-header text-lg font-semibold text-emerald-400 cursor-pointer mb-4';
+      header.textContent = `${filteredDate} (${group.length} messages)`;
+      header.addEventListener('click', () => {
+        messageList.classList.toggle('hidden');
+        header.classList.toggle('open');
+        header.textContent = `${filteredDate} (${group.length} messages) ${messageList.classList.contains('hidden') ? '▼' : '▲'}`;
+      });
+
+      const messageList = document.createElement('div');
+      messageList.className = 'messages-container';
+
+      group.forEach((msg, index) => {
+        const div = document.createElement('div');
+        div.className = 'message bg-gray-700 p-4 rounded-lg shadow-md mb-3';
+
+        const number = document.createElement('div');
+        number.className = 'text-sm text-gray-400';
+        number.textContent = `#${index + 1}`;
+
+        const content = document.createElement('div');
+        content.className = 'flex justify-between';
+        content.innerHTML = `
+          <div>
+            <span class="font-medium text-yellow-400">${msg.sender}:</span>
+            <span class="text-gray-100">${msg.text}</span>
+          </div>
+          <span class="text-sm text-gray-400">${msg.time}</span>
+        `;
+
+        div.appendChild(number);
+        div.appendChild(content);
+        messageList.appendChild(div);
+      });
+
+      container.appendChild(header);
+      container.appendChild(messageList);
+      messagesDiv.appendChild(container);
+    }
+
+    function addMessage(msg) {
+      if (!msg.date) return;
+      if (!groupedMessages[msg.date]) {
+        groupedMessages[msg.date] = [];
+      }
+      groupedMessages[msg.date].push(msg);
+
+      if (filteredDate === msg.date) {
+        renderMessages();
+      }
+    }
+
+    fetch('/messages')
+      .then(res => res.json())
+      .then(data => {
+        data.messages.forEach(addMessage);
+        if (filteredDate) renderMessages();
+      });
+
+    socket.on('new_message', msg => {
+      addMessage(msg);
+    });
+
+    // Debounced date picker change handler
+    const handleDateChange = debounce(() => {
+      filteredDate = datePicker.value;
+      if (filteredDate) {
+        datePickerContainer.classList.add('hidden');
+        backBtnContainer.classList.remove('hidden');
+        messagesDiv.classList.remove('hidden');
+        renderMessages();
+      }
+    }, 300);
+
+    datePicker.addEventListener('change', handleDateChange);
+
+    backBtn.addEventListener('click', () => {
+      filteredDate = null;
+      datePicker.value = '';
+      datePickerContainer.classList.remove('hidden');
+      backBtnContainer.classList.add('hidden');
+      messagesDiv.classList.add('hidden');
+      messagesDiv.innerHTML = '';
+    });
+
+    function getTodayDate() {
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      const mm = String(today.getMonth() + 1).padStart(2, '0');
+      const dd = String(today.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      const today = getTodayDate();
+      datePicker.value = today;
+      filteredDate = today;
+
+      datePickerContainer.classList.add('hidden');
+      backBtnContainer.classList.remove('hidden');
+      messagesDiv.classList.remove('hidden');
+
+      renderMessages();
+    });
+  </script>
+</body>
+</html>
