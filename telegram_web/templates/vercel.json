@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "telegram_web/api/app.py",
+      "use": "@vercel/python"
+    },
+    {
+      "src": "telegram_web/templates/index.html",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "telegram_web/api/app.py"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "telegram_web/templates/index.html"
+    }
+  ]
+}
